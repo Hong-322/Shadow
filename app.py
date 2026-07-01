@@ -55,6 +55,12 @@ API_URL = "https://script.google.com/macros/s/AKfycbywN4bkrHGWLi0qj562cxcNi3Bu0u
 st.sidebar.header("🕹️ Comms Settings")
 refresh_rate = st.sidebar.slider("Auto-refresh rate (seconds)", 5, 60, 10)
 
+# Placeholders created ONCE, outside the fragment. Fragments can update the
+# content of an existing container/placeholder, but repeatedly creating brand
+# new elements in st.sidebar from inside a fragment raises a StreamlitAPIException.
+sidebar_error_placeholder = st.sidebar.empty()
+sync_caption_placeholder = st.sidebar.empty()
+
 
 # Cache the raw fetch itself so a burst of reruns within the TTL window
 # doesn't hammer the Apps Script endpoint. TTL tracks the chosen refresh rate.
@@ -77,8 +83,10 @@ def render_dashboard():
     df = fetch_sensor_data(API_URL)
 
     if "__error__" in df.columns:
-        st.sidebar.error(f"Link Fault: {df['__error__'].iloc[0]}")
+        sidebar_error_placeholder.error(f"Link Fault: {df['__error__'].iloc[0]}")
         df = pd.DataFrame()
+    else:
+        sidebar_error_placeholder.empty()
 
     if not df.empty:
         # Extract the absolute latest summary record
@@ -215,7 +223,7 @@ def render_dashboard():
             </div>
             """, unsafe_allow_html=True)
 
-    st.sidebar.caption(f"Last sync: {time.strftime('%H:%M:%S')}")
+    sync_caption_placeholder.caption(f"Last sync: {time.strftime('%H:%M:%S')}")
 
 
 render_dashboard()
