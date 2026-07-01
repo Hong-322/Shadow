@@ -8,7 +8,7 @@ st.set_page_config(page_title="ShadowSense v1.0", layout="wide")
 
 st.markdown("""
     <style>
-    /* Global Styles */
+    /* Global Styles Override */
     .stApp { background-color: #ffffff; font-family: 'MS Sans Serif', 'Arial', sans-serif; }
     
     /* 90s Beveled Box Style */
@@ -35,6 +35,7 @@ st.markdown("""
         padding: 10px;
         border: 2px inset #fff;
         background-color: #fafafa;
+        margin-bottom: 10px;
     }
     
     /* Bar Table Styling */
@@ -42,59 +43,67 @@ st.markdown("""
     .bar-fill { height: 100%; }
     
     table { width: 100%; border-collapse: collapse; }
-    td { padding: 5px; font-size: 13px; border-bottom: 1px solid #ddd; }
+    td { padding: 5px; font-size: 13px; border-bottom: 1px solid #ddd; color: #333333; }
+    th { padding: 5px; font-size: 13px; border-bottom: 2px solid #808080; color: #000000; text-align: left;}
     </style>
     """, unsafe_allow_html=True)
 
-# --- HEADER ---
-st.markdown("""
-    <div class="retro-card">
-        <div style="font-size: 24px; font-weight: bold;">☀️ ShadowSense Diagnostic Utility</div>
-        <div style="font-size: 12px; color: #666;">Site A — Sepang Solar Farm, Selangor | [LIVE STATUS: ACTIVE]</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-# 🔗 GOOGLE APPS SCRIPT WEB APP URL
+# --- CONFIGURATION & INGESTION ---
 API_URL = "https://script.google.com/macros/s/AKfycbywN4bkrHGWLi0qj562cxcNi3Bu0upIzrF4aogMc8j92sffof_UbGAqVrv09HVAAt-9zw/exec"
 
-# Setup sidebar configuration
-st.sidebar.header("Dashboard Controls")
-refresh_rate = st.sidebar.slider("Auto-refresh interval (seconds)", 5, 60, 10)
+# Sidebar interval configurations
+st.sidebar.header("🕹️ Comms Settings")
+refresh_rate = st.sidebar.slider("Auto-refresh rate (seconds)", 5, 60, 10)
 
-# Function to fetch data from your Google Script
+# Cached API fetcher to prevent app stuttering
+@st.fragment
 def fetch_sensor_data(url):
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=5)
         if response.status_code == 200:
             return pd.DataFrame(response.json())
     except Exception as e:
-        st.sidebar.error(f"Sync Connection Failed: {e}")
+        st.sidebar.error(f"Link Fault: {e}")
     return pd.DataFrame()
 
-# Fetch latest live data from Google Sheets
+# Pull live data frame
 df = fetch_sensor_data(API_URL)
 
 if not df.empty:
-    # Safely convert timestamp string records to DateTime
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-    
-    # Isolate the latest single sample record row
+    # Extract the absolute latest summary record
     latest = df.iloc[-1]
     
-    # Process string transformations for labels
-    current_label = str(latest['label']).lower()
+    # Map the incoming data safely
+    current_label = str(latest.get('label', 'none')).lower()
+    dom_pct = int(latest.get('dom_pct', 0))
+    temp = float(latest.get('temp', 0.0))
+    hum = float(latest.get('hum', 0.0))
+    rb_ratio = float(latest.get('rb', 0.0))
+    flatness = float(latest.get('flat', 0.0))
     
+    # Map labels to human-readable format
+    label_map = {"none": "No Shadow", "object": "Object", "weather": "Weather", "dust": "Dust / Haze"}
+    display_label = label_map.get(current_label, "Unknown")
+
+    # --- HEADER ---
+    st.markdown(f"""
+        <div class="retro-card">
+            <div style="font-size: 24px; font-weight: bold; color: #000000;">☀️ ShadowSense Diagnostic Utility</div>
+            <div style="font-size: 12px; color: #666;">Site A — Sepang Solar Farm, Selangor | [LIVE STATUS: RUNNING]</div>
+        </div>
+        """, unsafe_allow_html=True)
+
     # --- SNAPSHOT GRID ---
-    st.markdown('<p style="font-weight:bold; font-size:14px; margin-bottom:5px;">CURRENT SNAPSHOT</p>', unsafe_allow_html=True)
+    st.markdown('<p style="font-weight:bold; font-size:14px; margin-bottom:5px; color:#000;">CURRENT SNAPSHOT</p>', unsafe_allow_html=True)
     c1, c2, c3, c4, c5, c6 = st.columns(6)
 
     metrics = [
-        ("Shadow Class", str(latest['label']).upper(), "#ffffba"),      # Pastel Yellow
-        ("Temperature", f"{latest['temp']}°C", "#ffb3ba"),              # Pastel Red
-        ("R/B Ratio", f"{latest['rb']:.3f}", "#baffc9"),                # Pastel Green
-        ("Dominance", f"{latest['dom_pct']}%", "#bae1ff"),              # Pastel Blue
-        ("Flatness", f"{latest['flat']:.3f}", "#e1f7d5"),               # Pale Green
-        ("Humidity", f"{latest['hum']}%", "#ffdfba")                   # Pastel Orange
+        ("Shadow Class", display_label, "#ffffba"),      # Pastel Yellow
+        ("Temperature", f"{temp}°C", "#ffb3ba"),         # Pastel Red
+        ("R/B Ratio", f"{rb_ratio:.2f}", "#baffc9"),      # Pastel Green
+        ("Humidity", f"{hum}%", "#bae1ff"),              # Pastel Blue
+        ("Flatness", f"{flatness:.2f}", "#e1f7d5"),       # Pale Green
+        ("Dominance", f"{dom_pct}%", "#ffdfba")           # Pastel Orange
     ]
 
     for i, col in enumerate([c1, c2, c3, c4, c5, c6]):
@@ -102,7 +111,7 @@ if not df.empty:
             st.markdown(f"""
                 <div class="metric-box" style="background-color: {metrics[i][2]};">
                     <div style="font-size:11px; color:#555;">{metrics[i][0]}</div>
-                    <div style="font-size:18px; font-weight:bold;">{metrics[i][1]}</div>
+                    <div style="font-size:18px; font-weight:bold; color:#000;">{metrics[i][1]}</div>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -112,17 +121,14 @@ if not df.empty:
     left_col, right_col = st.columns(2)
 
     with left_col:
-        st.markdown('<div class="retro-header">CLASSIFIER CONFIDENCE (LIVE VOTE)</div>', unsafe_allow_html=True)
+        st.markdown('<div class="retro-header">CLASSIFIER WINNER CONFIDENCE (CURRENT SUMMARY)</div>', unsafe_allow_html=True)
         
-        # Determine confidence levels dynamically based on the current winning label
-        pct = int(latest['dom_pct'])
-        other_pct = (100 - pct) // 3 # Sub-allocate remaining weight to other slots for styling visual depth
-        
+        # Dynamic confidence filling based on actual winner status
         classes = [
-            ("No Shadow", pct if current_label == "none" else other_pct, "#baffc9"),
-            ("Object", pct if current_label == "object" else other_pct, "#ffb3ba"),
-            ("Weather", pct if current_label == "weather" else other_pct, "#bae1ff"),
-            ("Dust / Haze", pct if current_label == "dust" else other_pct, "#ffffba")
+            ("No Shadow", dom_pct if current_label == "none" else 0, "#baffc9"),
+            ("Object", dom_pct if current_label == "object" else 0, "#ffb3ba"),
+            ("Weather", dom_pct if current_label == "weather" else 0, "#bae1ff"),
+            ("Dust / Haze", dom_pct if current_label == "dust" else 0, "#ffffba")
         ]
         
         table_html = "<table>"
@@ -140,71 +146,77 @@ if not df.empty:
         st.markdown(table_html, unsafe_allow_html=True)
 
     with right_col:
-        st.markdown('<div class="retro-header">SPECTRAL METRICS ANALYSIS SUMMARY</div>', unsafe_allow_html=True)
+        st.markdown('<div class="retro-header">HISTORIC OVERVIEW LOG (LAST 5 ENTRIES)</div>', unsafe_allow_html=True)
         
-        # Map structural ratio values to bar scaling (Clamped 0.0 - 2.0 to 0 - 100% frame fill bounds)
-        rb_bar_val = min(100, int((float(latest['rb']) / 2.0) * 100))
-        flat_bar_val = min(100, int(float(latest['flat']) * 100))
-        
-        spec_html = f"""
+        # Displaying historical database rows inside a clean HTML structure
+        history_df = df.tail(5).sort_index(ascending=False)
+        hist_html = """
         <table>
             <tr>
-                <td width="30%">Red/Blue Ratio</td>
-                <td>
-                    <div class="bar-container"><div class="bar-fill" style="width:{rb_bar_val}%; background-color:#e05030;"></div></div>
-                </td>
-                <td width="15%">{latest['rb']:.3f}</td>
+                <th><b>Timestamp</b></th>
+                <th><b>Label</b></th>
+                <th><b>R/B</b></th>
+                <th><b>Flat</b></th>
+                <th><b>Temp</b></th>
             </tr>
-            <tr>
-                <td width="30%">Spectral Flatness</td>
-                <td>
-                    <div class="bar-container"><div class="bar-fill" style="width:{flat_bar_val}%; background-color:#4f7dde;"></div></div>
-                </td>
-                <td width="15%">{latest['flat']:.3f}</td>
-            </tr>
-        </table>
         """
-        st.markdown(spec_html, unsafe_allow_html=True)
+        for _, row in history_df.iterrows():
+            ts_trimmed = str(row.get('timestamp', ''))[:19].replace('T', ' ')
+            lbl = str(row.get('label','')).upper()
+            hist_html += f"""
+                <tr>
+                    <td>{ts_trimmed}</td>
+                    <td style="color:#059669; font-weight:bold;">{lbl}</td>
+                    <td>{float(row.get('rb', 0.0)):.2f}</td>
+                    <td>{float(row.get('flat', 0.0)):.2f}</td>
+                    <td>{float(row.get('temp', 0.0)):.1f}°C</td>
+                </tr>
+            """
+        hist_html += "</table>"
+        st.markdown(hist_html, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
 
     # --- HISTORICAL TEMPERATURE PROFILE TREND ---
-    st.markdown('<div class="retro-header">HISTORICAL TEMPERATURE TREND PROFILE (LAST 6 SUMMARIES)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="retro-header">HISTORICAL TEMPERATURE TREND BAR DIAGRAM (LAST 6 SUMMARY INTERVALS)</div>', unsafe_allow_html=True)
 
-    # Pull out up to the last 6 data entries dynamically
-    history_df = df.tail(6)
+    # Extract the last 6 entries to compile into the vertical bars
+    trend_slice = df.tail(6)
     
     loss_html = "<table><tr>"
-    for idx, row in history_df.iterrows():
-        # Clean relative timestamp label output strings
-        t_label = row['timestamp'].strftime('%H:%M:%S')
-        val = float(row['temp'])
-        
-        # Determine bar fill coloring profile based on threshold values
-        color = "#ffb3ba" if val > 35.0 else "#baffc9"
-        
-        # Scale dynamic graph pixel heights safely relative to normal outdoor operating scopes (e.g., max 50C)
-        height_pct = min(100, int((val / 50.0) * 100))
+    for idx, row in trend_slice.iterrows():
+        t_val = float(row.get('temp', 0.0))
+        # Handle dynamic rendering heights safely up to 50C scale limits
+        pct_height = min(100, max(10, int((t_val / 50.0) * 100))) 
         
         loss_html += f"""
             <td style="text-align:center; border-bottom:none;">
-                <div style="height:100px; display:flex; align-items:flex-end; justify-content:center; background:#eee; border:1px inset #fff; padding:2px;">
-                    <div style="width:45px; height:{height_pct}%; background-color:{color}; border:1px solid #808080;"></div>
+                <div style="height:120px; display:flex; align-items:flex-end; justify-content:center; background:#eee; border:1px inset #fff; padding:4px;">
+                    <div style="width:45px; height:{pct_height}%; background-color:#ffb3ba; border:1px solid #808080;"></div>
                 </div>
-                <div style="font-size:10px; margin-top:5px;">{t_label}<br><b>{val:.1f}°C</b></div>
+                <div style="font-size:11px; margin-top:5px; color:#333;">Point {idx}<br><b>{t_val:.1f}°C</b></div>
             </td>
         """
     loss_html += "</tr></table>"
     st.markdown(loss_html, unsafe_allow_html=True)
 
 else:
-    st.warning("⚠️ CRITICAL: Awaiting active telemetry packet stream data values from Google Sheets storage array...")
+    # 90s fallback error card component styling
+    st.markdown("""
+        <div class="retro-card" style="border-color: #ffffff #ef4444 #ef4444 #ffffff;">
+            <div style="color: #b91c1c; font-weight: bold;">⚠️ TELEMETRY CONNECTION ERROR</div>
+            <div style="font-size: 12px; color: #666; margin-top:5px;">Awaiting incoming streaming data arrays from remote micro-controller nodes...</div>
+        </div>
+        """, unsafe_allow_html=True)
 
 # --- FOOTER ---
 st.markdown("""
-    <div style="margin-top:20px; font-size:10px; color:#999; border-top: 1px solid #ddd; padding-top:10px;">
-        SYSTEM_ID: SHADOWSENSE_V1_STABLE | TELEMETRY_LINK: GOOGLE_APPS_SCRIPT_WEB_APP | INA226_EMULATED
+    <div style="margin-top:25px; font-size:10px; color:#999; border-top: 1px solid #ddd; padding-top:10px;">
+        SYSTEM_ID: SHADOWSENSE_V1_STABLE | TELEMETRY_SOURCE: GOOGLE_APPS_SCRIPT_PROXY | RENDERING: STREAMLIT_CLOUD_NATIVE
     </div>
     """, unsafe_allow_html=True)
 
-# Auto-refresh loop engine injection 
+# Auto-refresh rerun mechanism loop
 time.sleep(refresh_rate)
+st.sidebar.caption(f"Last sync: {time.strftime('%H:%M:%S')}")
 st.rerun()
