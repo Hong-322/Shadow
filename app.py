@@ -55,12 +55,6 @@ API_URL = "https://script.google.com/macros/s/AKfycbywN4bkrHGWLi0qj562cxcNi3Bu0u
 st.sidebar.header("🕹️ Comms Settings")
 refresh_rate = st.sidebar.slider("Auto-refresh rate (seconds)", 5, 60, 10)
 
-# Placeholders created ONCE, outside the fragment. Fragments can update the
-# content of an existing container/placeholder, but repeatedly creating brand
-# new elements in st.sidebar from inside a fragment raises a StreamlitAPIException.
-sidebar_error_placeholder = st.sidebar.empty()
-sync_caption_placeholder = st.sidebar.empty()
-
 
 # Cache the raw fetch itself so a burst of reruns within the TTL window
 # doesn't hammer the Apps Script endpoint. TTL tracks the chosen refresh rate.
@@ -75,6 +69,18 @@ def fetch_sensor_data(url: str) -> pd.DataFrame:
     return pd.DataFrame()
 
 
+# A fragment can only write to the sidebar if it is invoked from inside a
+# `with st.sidebar:` block (see call site near the bottom of the file).
+# Keeping this fragment separate from the main dashboard fragment below lets
+# each one write to its own area without tripping that restriction.
+@st.fragment(run_every=refresh_rate)
+def render_sidebar_status():
+    df = fetch_sensor_data(API_URL)  # served from cache in the common case
+    if "__error__" in df.columns:
+        st.error(f"Link Fault: {df['__error__'].iloc[0]}")
+    st.caption(f"Last sync: {time.strftime('%H:%M:%S')}")
+
+
 # Everything that should auto-refresh lives inside this fragment.
 # run_every triggers a lightweight rerun of *just this fragment* on a timer,
 # instead of blocking the thread with time.sleep + a full st.rerun().
@@ -83,10 +89,7 @@ def render_dashboard():
     df = fetch_sensor_data(API_URL)
 
     if "__error__" in df.columns:
-        sidebar_error_placeholder.error(f"Link Fault: {df['__error__'].iloc[0]}")
         df = pd.DataFrame()
-    else:
-        sidebar_error_placeholder.empty()
 
     if not df.empty:
         # Extract the absolute latest summary record
@@ -223,8 +226,9 @@ def render_dashboard():
             </div>
             """, unsafe_allow_html=True)
 
-    sync_caption_placeholder.caption(f"Last sync: {time.strftime('%H:%M:%S')}")
 
+with st.sidebar:
+    render_sidebar_status()
 
 render_dashboard()
 
